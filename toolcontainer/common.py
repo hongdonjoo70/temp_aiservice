@@ -19,13 +19,14 @@ class Model:
     gemini: str = "gemini-3.5-flash"
     gemini_flash: str = "gemini-3.5-flash"
     gemini_pro: str = "gemini-3.5-pro"
+    gpt_oss_120b: str = "gpt-oss-120b"
 
 model = Model()
 
 # Gemini OpenAI-compatible client
 client = OpenAI(
-    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-    api_key=os.getenv("GEMINI_API_KEY"),
+    base_url="https://open.hasa.re.kr/v1",
+    api_key=os.getenv("HASA_API_KEY"),
     timeout=30,
     max_retries=1
 )
@@ -61,7 +62,7 @@ def makeup_response(message, finish_reason="error"):
 
 
 # Responses API input 토큰 수 계산
-def gpt_num_tokens(messages, model="gemini-3.5-flash"):
+def gpt_num_tokens(messages, model="gpt_oss_120b"):
     """
     Responses API에 전달할 input/context의
     문자열 기반 예상 토큰 수를 계산한다.

@@ -11,10 +11,10 @@ from tool_calling import ToolCalling, tools
 chatbot = Chatbot(
     system_role=system_role,
     instruction=instruction,
-    use_model=model.gemini
+    use_model=model.gpt_oss_120b
 )
 # ToolCalling 객체 생성
-tool_calling = ToolCalling(model=model.gemini)
+tool_calling = ToolCalling(model=model.gpt_oss_120b)
 
 app = Flask( __name__ )
 
