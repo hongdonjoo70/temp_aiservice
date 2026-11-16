@@ -1,0 +1,67 @@
+from flask import Flask, render_template, request
+import sys
+
+from Chatbot import Chatbot
+from common import model
+from characters import system_role, instruction
+from tool_calling import ToolCalling, tools
+
+
+# Chatbot 객체 생성
+chatbot = Chatbot(
+    system_role=system_role,
+    instruction=instruction,
+    use_model=model.gemini
+)
+# ToolCalling 객체 생성
+tool_calling = ToolCalling(model=model.gemini)
+
+app = Flask( __name__ )
+
+@app.route( "/" )
+def index():
+    return "Hello, ChatGPT"
+
+# chat-app 함수
+@app.route( "/chat-app" )
+def chat_app():
+    return render_template( "chat.html" )
+
+# chat-api 함수
+@app.route( "/chat-api", methods=["POST"] )
+def chat_api():
+    # 사용자 입력 내용
+    print(f'requeset_message : {request.json}')
+    user_input = request.json['request_message']
+
+    # Chatbot 객체를 이용해서 LLM에 요청 및 응답 수신
+    # Chatbot 객체를 이용하여 ChatGPT에 요청 및 응답 수신
+    chatbot.add_user_message(user_input)  # 사용자 메시지 추가
+
+    # ChatGPT 에게 함수 사양을 토대로 사용자 메시지에 호응하는 함수 정보 분석 요청
+    analyzed = tool_calling.analyze(user_input, tools)
+
+    # 함수 호출 정보(tool_calls) 확인
+    tool_calls = analyzed.get("choices", [{}])[0].get("message", {}).get("tool_calls")
+
+    # 에러가 발생한 경우 바로 반환
+    if analyzed.get("choices", [{}])[0].get("finish_reason") == "error":
+        response = analyzed
+    elif tool_calls:
+        # 함수 호출이 필요한 경우
+        response = tool_calling.run(analyzed, chatbot.context[:])
+    else:
+        # 함수 호출이 필요하지 않은 경우
+        response = chatbot.send_request()  # API 요청
+
+    chatbot.add_response_message(response)  # 응답 메시지 context 추가
+
+    # 응답 결과 출력
+    response_message = chatbot.get_last_response()   # 응답 출력
+    chatbot.handle_token_limit(response)  # 토큰수 제어 메서드 실행
+    print(f'response_message : {response_message}')
+
+    return {"response_message": response_message}
+
+if __name__ == "__main__":
+    app.run( host = '0.0.0.0', port = 8080, debug = True )
