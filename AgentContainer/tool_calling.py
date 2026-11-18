@@ -85,64 +85,69 @@ report_system_role = """
 def write_report(**kwargs):
     print("write_report", kwargs)
 
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model=model.advanced,
-        input=[
+        messages=[
             {"role": "system", "content": report_system_role},
             {"role": "user", "content": kwargs['materials']}
         ],
         timeout=90,
     )
 
-    report = response.output_text
-
+    report = response.choices[0].message.content or ""
     return report
 
-# Responses API용 tools
+# Chat Completions API용 tools
 tools = [
     {
         "type": "function",
-        "name": "get_celsius_temperature",
-        "description": "지정된 위치의 현재 섭씨 날씨 확인",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "광역시도, e.g. 서울, 경기"
-                }
-            },
-            "required": ["location"]
+        "function": {
+            "name": "get_celsius_temperature",
+            "description": "지정된 위치의 현재 섭씨 날씨 확인",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "광역시도, e.g. 서울, 경기"
+                    }
+                },
+                "required": ["location"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_currency",
-        "description": "지정된 통화의 원(KRW) 기준의 환율 확인.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "currency_name": {
-                    "type": "string",
-                    "description": "통화명, e.g. 달러환율, 엔화환율"
-                }
-            },
-            "required": ["currency_name"]
+        "function": {
+            "name": "get_currency",
+            "description": "지정된 통화의 원(KRW) 기준의 환율 확인.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "currency_name": {
+                        "type": "string",
+                        "description": "통화명, e.g. 달러환율, 엔화환율"
+                    }
+                },
+                "required": ["currency_name"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "search_internet",
-        "description": "답변 시 인터넷 검색이 필요하다고 판단되는 경우 수행",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "search_query": {
-                    "type": "string",
-                    "description": "인터넷 검색을 위한 검색어"
-                }
-            },
-            "required": ["search_query"]
+        "function": {
+            "name": "search_internet",
+            "description": "답변 시 인터넷 검색이 필요하다고 판단되는 경우 수행",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_query": {
+                        "type": "string",
+                        "description": "인터넷 검색을 위한 검색어"
+                    }
+                },
+                "required": ["search_query"]
+            }
         }
     }
 ]
@@ -151,32 +156,36 @@ tools = [
 tools_report = [
     {
         "type": "function",
-        "name": "search_internet_for_report",
-        "description": "자료를 찾기 위해 인터넷을 검색하는 함수",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "search_query": {
-                    "type": "string",
-                    "description": "인터넷 검색을 위한 검색어"
-                }
-            },
-            "required": ["search_query"]
+        "function": {
+            "name": "search_internet_for_report",
+            "description": "자료를 찾기 위해 인터넷을 검색하는 함수",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_query": {
+                        "type": "string",
+                        "description": "인터넷 검색을 위한 검색어"
+                    }
+                },
+                "required": ["search_query"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "write_report",
-        "description": "수집된 정보를 바탕으로 보고서를 작성해주는 함수",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "materials": {
-                    "type": "string",
-                    "description": "사용자 메시지 중 '수집된 자료:' 리스트 안에 있는 raw data"
-                }
-            },
-            "required": ["materials"]
+        "function": {
+            "name": "write_report",
+            "description": "수집된 정보를 바탕으로 보고서를 작성해주는 함수",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "materials": {
+                        "type": "string",
+                        "description": "사용자 메시지 중 '수집된 자료:' 리스트 안에 있는 raw data"
+                    }
+                },
+                "required": ["materials"]
+            }
         }
     }
 ]
@@ -196,85 +205,124 @@ class ToolCalling:
     # 1. 사용자 메시지 분석
     def analyze(self, user_message, tools):
         try:
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                input=[{"role": "user", "content": user_message}],
+                messages=[{"role": "user", "content": user_message}],
                 tools=tools,
                 tool_choice="auto",
-            )
-            print(("response =>", response))
+                max_tokens=2048
+            ).model_dump()
+            print("response =>", response)
             return response
         except Exception as e:
             print("Error occurred(analyze):", e)
-            raise ValueError(f"[analyze 오류입니다]:{e}")
+            if "429" in str(e):
+                return makeup_response("요청이 너무 많아 잠시 제한되었습니다 (429 Rate Limit). 잠시 후 다시 시도해 주세요.")
+            return makeup_response(f"API 요청 중 오류가 발생했습니다: {e}")
 
     # 2. 함수 실행
     def run(self, response, context):
         try:
-            # Responses API의 output에서 function_call 항목 찾기
-            function_calls = [ item for item in response.output if item.type == "function_call" ]
+            # choices[0].message 에서 tool_calls 항목 찾기
+            message = response["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
 
             # 함수 호출이 없는 경우
-            if not function_calls:
+            if not tool_calls:
                 return response
 
             # 첫 번째 함수 호출
-            tool_call = function_calls[0]
-            func_name = tool_call.name
-            func_to_call = self.available_functions[ func_name ]
-            # 함수 매개변수
-            func_args = json.loads( tool_call.arguments )
-            # 실제 Python 함수 실행
-            func_response = func_to_call( **func_args )
+            tool_call = tool_calls[0]
+            func_name = tool_call["function"]["name"]
+            func_to_call = self.available_functions.get(func_name)
+            if not func_to_call:
+                raise ValueError(f"정의되지 않은 함수 호출 요청: {func_name}")
 
-            # 모델의 function_call을 context에 추가
-            context.append( tool_call.model_dump() )
-            # 함수 실행 결과를 Responses API 형식으로 추가
-            context.append(
-                {
-                    "type": "function_call_output",
-                    "call_id": tool_call.call_id,
-                    "output": str(func_response)
-                }
-            )
+            # 함수 매개변수
+            raw_args = tool_call["function"].get("arguments", {})
+            if isinstance(raw_args, str):
+                try:
+                    func_args = json.loads(raw_args)
+                except Exception:
+                    func_args = {}
+            elif isinstance(raw_args, dict):
+                func_args = raw_args
+            else:
+                func_args = {}
+
+            print(f"[run] 함수 실행: {func_name}({func_args})")
+            # 실제 Python 함수 실행
+            func_response = func_to_call(**func_args)
+            print(f"[run] 함수 반환 결과: {func_response}")
+
+            # 모델의 tool_calls 메시지를 정제하여 context에 추가
+            context.append({
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls
+            })
+            # 함수 실행 결과를 tool role 형식으로 추가
+            context.append({
+                "role": "tool",
+                "tool_call_id": tool_call.get("id") or "call_0",
+                "content": str(func_response)
+            })
 
             # 함수 실행 결과를 포함하여 다시 API 호출
-            final_response = client.responses.create(
+            final_response = client.chat.completions.create(
                 model=self.model,
-                input=context,
-                tools=tools
-            )
+                messages=context,
+                tools=tools,
+                tool_choice="none",
+                max_tokens=2048
+            ).model_dump()
+            final_msg = final_response['choices'][0]['message']
+            print(f"[run] 2차 최종 응답: {final_msg}")
+
+            if not final_msg.get("content"):
+                final_msg["content"] = str(func_response)
+
             return final_response
         except Exception as e:
             print("Error occurred(run):", e)
-            return makeup_response("[run 오류입니다]")
+            return makeup_response(f"[run 오류입니다: {e}]")
 
     # 보고서 작성 실행을 위한 메서드
     def call_function(self, analyzed):
         try:
-            # Responses API의 output에서 function_call 찾기
-            function_calls = [item for item in analyzed.output if item.type == "function_call"]
+            # choices[0].message 에서 tool_calls 찾기
+            message = analyzed["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
 
             # 함수 호출이 없는 경우
-            if not function_calls:
+            if not tool_calls:
                 return analyzed
 
-            # 첫 번째 function_call
-            tool_call = function_calls[0]
-            # 함수 이름
-            func_name = tool_call.name
-            # 실제 Python 함수
-            func_to_call = self.available_functions[func_name]
-            # JSON 문자열 → Python dictionary
-            func_args = json.loads(tool_call.arguments)
+            # 첫 번째 tool_call
+            tool_call = tool_calls[0]
+            func_name = tool_call["function"]["name"]
+            func_to_call = self.available_functions.get(func_name)
+            if not func_to_call:
+                return f"[call_function 정의되지 않은 함수: {func_name}]"
+
+            raw_args = tool_call["function"].get("arguments", {})
+            if isinstance(raw_args, str):
+                try:
+                    func_args = json.loads(raw_args)
+                except Exception:
+                    func_args = {}
+            elif isinstance(raw_args, dict):
+                func_args = raw_args
+            else:
+                func_args = {}
+
             print("function:", func_name)
             print("arguments:", func_args)
 
             # 실제 함수 실행
             func_response = func_to_call(**func_args)
-
             return str(func_response)
 
         except Exception as e:
             print("Error occurred(call_function):", e)
-            return makeup_response("[call_function 오류입니다]")
+            return f"[call_function 오류입니다: {e}]"

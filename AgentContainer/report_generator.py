@@ -22,18 +22,14 @@ template = """
 
 # 1. 보고서 작성 작업을 2단계로 분리
 def create_step_plan(message):
-    response = client.responses.create(
+    response = client.chat.completions.create(
         model=model.advanced,
-        input=[{"role": "user","content": message}],
-        # JSON 형태로 출력
-        text={
-            "format": {
-                "type": "json_object"
-            }
-        }
+        messages=[{"role": "user", "content": message}],
+        response_format={"type": "json_object"}
     )
 
-    return json.loads(response.output_text)
+    content = response.choices[0].message.content or "{}"
+    return json.loads(content)
 
 # 2. 사용자 과제
 print("sys.argv[1]", sys.argv[1])
@@ -45,12 +41,12 @@ response_message = ""
 for step in steps.values():
     print("step:", step)
     user_message = f"{step}:\n{response_message}"
-    # Responses API로 사용자 요청 분석
-    analyzed = tool_calling.analyze(user_message,tools_report)
-    # function_call 찾기
-    function_calls = [item for item in analyzed.output if item.type == "function_call"]
+    # Chat Completions API로 사용자 요청 분석
+    analyzed = tool_calling.analyze(user_message, tools_report)
+    # tool_calls 찾기
+    tool_calls = analyzed.get("choices", [{}])[0].get("message", {}).get("tool_calls")
     # 함수 호출이 있는 경우
-    if function_calls:
+    if tool_calls:
         response_message = tool_calling.call_function(analyzed)
 
 # 4. 최종 결과

@@ -41,10 +41,12 @@ def chat_api():
     # ChatGPT 에게 함수 사양을 토대로 사용자 메시지에 호응하는 함수 정보 분석 요청
     analyzed = tool_calling.analyze(user_input, tools)
 
-    # Responses API의 output에서 function_call 확인
-    function_calls = [item for item in analyzed.output if item.type == "function_call"]
+    # Chat Completions API의 message에서 tool_calls 확인
+    tool_calls = analyzed.get("choices", [{}])[0].get("message", {}).get("tool_calls")
 
-    if function_calls:
+    if analyzed.get("choices", [{}])[0].get("finish_reason") == "error":
+        response = analyzed
+    elif tool_calls:
         # 함수 호출이 필요한 경우
         response = tool_calling.run(analyzed, chatbot.context[:])
     else:

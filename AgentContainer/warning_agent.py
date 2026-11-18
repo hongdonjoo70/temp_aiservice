@@ -23,6 +23,7 @@ class WarningAgent:
         self.warnings = (
             [value.format(user=kwargs["user"]) for value in WARNINGS]
         )
+        print(f"WarningAgent initialized with user: {kwargs['user']}, model: {kwargs['model']}")
 
     def make_dialogue(self, context):
         dialogue_list = []
@@ -39,6 +40,7 @@ class WarningAgent:
     def monitor_user(self, context):
         self.checked_list = []
         self.checked_context = []
+        print(f"monitor_user context length: {len(context)}: {context}")
 
         if len(context) <= abs(MIN_CONTEXT_SIZE):
             return False
@@ -80,18 +82,17 @@ class WarningAgent:
 
     def send_query(self, context, temperature=0, format_type="json_object"):
         try:
-            response = client.responses.create(
-                model=self.model,
-                input=context,
-                temperature=temperature,
-                text={
-                    "format": {
-                        "type": format_type
-                    }
-                }
-            )
+            kwargs = {
+                "model": self.model,
+                "messages": context,
+                "temperature": temperature,
+                "max_tokens": 1024
+            }
+            if format_type == "json_object":
+                kwargs["response_format"] = {"type": "json_object"}
 
-            content = response.output_text
+            response = client.chat.completions.create(**kwargs)
+            content = response.choices[0].message.content or ""
             print(f"query response:[{content}]")
             return content
 

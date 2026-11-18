@@ -69,51 +69,57 @@ def search_internet(**kwargs):
     print("answer",answer)
     return answer
 
-# Responses API용 tools
+# Chat Completions API용 tools
 tools = [
     {
         "type": "function",
-        "name": "get_celsius_temperature",
-        "description": "지정된 위치의 현재 섭씨 날씨 확인",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "광역시도, e.g. 서울, 경기"
-                }
-            },
-            "required": ["location"]
+        "function": {
+            "name": "get_celsius_temperature",
+            "description": "지정된 위치의 현재 섭씨 날씨 확인",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "광역시도, e.g. 서울, 경기"
+                    }
+                },
+                "required": ["location"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "get_currency",
-        "description": "지정된 통화의 원(KRW) 기준의 환율 확인.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "currency_name": {
-                    "type": "string",
-                    "description": "통화명, e.g. 달러환율, 엔화환율"
-                }
-            },
-            "required": ["currency_name"]
+        "function": {
+            "name": "get_currency",
+            "description": "지정된 통화의 원(KRW) 기준의 환율 확인.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "currency_name": {
+                        "type": "string",
+                        "description": "통화명, e.g. 달러환율, 엔화환율"
+                    }
+                },
+                "required": ["currency_name"]
+            }
         }
     },
     {
         "type": "function",
-        "name": "search_internet",
-        "description": "답변 시 인터넷 검색이 필요하다고 판단되는 경우 수행",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "search_query": {
-                    "type": "string",
-                    "description": "인터넷 검색을 위한 검색어"
-                }
-            },
-            "required": ["search_query"]
+        "function": {
+            "name": "search_internet",
+            "description": "답변 시 인터넷 검색이 필요하다고 판단되는 경우 수행",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search_query": {
+                        "type": "string",
+                        "description": "인터넷 검색을 위한 검색어"
+                    }
+                },
+                "required": ["search_query"]
+            }
         }
     }
 ]
@@ -131,58 +137,69 @@ class ToolCalling:
     # 1. 사용자 메시지 분석
     def analyze(self, user_message, tools):
         try:
-            response = client.responses.create(
-                    model=self.model,
-                    input=[{"role": "user", "content": user_message}],
-                    tools=tools,
-                    tool_choice="auto", 
-                )
-            print(("response =>", response))
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": user_message}],
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=2048
+            ).model_dump()
+            print("response =>", response)
             return response
         except Exception as e:
-            print("Error occurred(analyze):",e)
-            return makeup_response("[analyze 오류입니다]")
+            print("Error occurred(analyze):", e)
+            if "429" in str(e):
+                return makeup_response("요청이 너무 많아 잠시 제한되었습니다 (429 Rate Limit). 잠시 후 다시 시도해 주세요.")
+            return makeup_response(f"API 요청 중 오류가 발생했습니다: {e}")
 
     def run(self, analyzed, context):
         try:
-            # Responses API의 output에서 function_call 항목만 추출
-            function_calls = [ item for item in analyzed.output if item.type == "function_call" ]
+            message = analyzed["choices"][0]["message"]
+            tool_calls = message.get("tool_calls") or []
 
             # 함수 호출이 없는 경우
-            if not function_calls:
+            if not tool_calls:
                 return analyzed
 
-            # 모델이 요청한 모든 function_call을 context에 먼저 추가
-            for tool_call in function_calls:
-                context.append( tool_call.model_dump() )
+            # 모델의 tool_calls 메시지를 context에 추가
+            context.append({
+                "role": "assistant",
+                "content": message.get("content") or "",
+                "tool_calls": tool_calls
+            })
 
             # 모든 함수 실행
-            for tool_call in function_calls:
-                func_name = tool_call.name
-                func_to_call = self.available_functions[ func_name ]
-                # JSON 문자열 → Python dictionary
-                func_args = json.loads( tool_call.arguments )
-                print( f"function: {func_name}, " f"arguments: {func_args}" )
-                # 실제 Python 함수 호출
-                func_response = func_to_call( **func_args )
+            for tool_call in tool_calls:
+                func_name = tool_call["function"]["name"]
+                func_to_call = self.available_functions.get(func_name)
+                raw_args = tool_call["function"].get("arguments", {})
+                if isinstance(raw_args, str):
+                    try:
+                        func_args = json.loads(raw_args)
+                    except Exception:
+                        func_args = {}
+                else:
+                    func_args = raw_args
+                print(f"function: {func_name}, arguments: {func_args}")
+                func_response = func_to_call(**func_args)
 
-                # 함수 실행 결과를 context에 추가
-                context.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": str(func_response)
-                    }
-                )
+                # 함수 실행 결과를 tool role로 context에 추가
+                context.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.get("id") or "call_0",
+                    "content": str(func_response)
+                })
 
-            # 모든 함수 실행 결과를 포함하여 Responses API 다시 호출
-            final_response = client.responses.create(
+            # 모든 함수 실행 결과를 포함하여 Chat Completions 다시 호출
+            final_response = client.chat.completions.create(
                 model=self.model,
-                input=context,
-                tools=tools
-            )
+                messages=context,
+                tools=tools,
+                tool_choice="none",
+                max_tokens=2048
+            ).model_dump()
             return final_response
         except Exception as e:
-            print("Error occurred(run):",e)
-            return makeup_response("[run 오류입니다]")
+            print("Error occurred(run):", e)
+            return makeup_response(f"[run 오류입니다: {e}]")
 

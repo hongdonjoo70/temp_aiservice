@@ -8,7 +8,7 @@ class Chatbot:
         # context 초기화 및 대화 문맥 생성
         self.model = use_model
         self.context = [
-            {"role": "system", "content": f'{system_role}/n/n{instruction}'}
+            {"role": "system", "content": f'{system_role}\n\n{instruction}'}
         ]
         self.max_token_size = 16 * 1024  # 최대 token 수
         # WarningAgent에 전달할 파라미터 추가
@@ -55,17 +55,18 @@ class Chatbot:
                 self.context.pop()
                 return makeup_response('메시지를 조금 짧게 보내 줄래?')
 
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                input=self.context,
+                messages=self.context,
                 temperature=0.5,
                 top_p=1,
-                max_output_tokens=256
-            )
+                max_tokens=2048
+            ).model_dump()
             return response
 
         except Exception as e:
             print(f'Exception 오류({type(e)}) 발생 : {e}')
+            return makeup_response(f'API 요청 중 오류가 발생했습니다: {e}')
 
     def send_request(self):
         # WarningAgent가 사용자의 마지막 대화를 검사
@@ -78,18 +79,7 @@ class Chatbot:
 
     # 응답 내용을 context에 추가
     def add_response(self, response):
-        if hasattr(response, "output_text"):
-            # 정상적인 Responses API Response 객체
-            response_text = response.output_text
-        elif isinstance(response, dict):
-            # makeup_response()의 임의 응답
-            response_text = response.get("output_text", "")
-        elif isinstance(response, str):
-            # WarningAgent의 경고 메시지
-            response_text = response
-        else:
-            response_text = str(response)
-
+        response_text = self.get_response(response)
         self.context.append({
             "role": "assistant",
             "content": response_text
@@ -97,14 +87,16 @@ class Chatbot:
 
     # 응답 내용을 출력하고 반환
     def get_response(self, response):
-        if hasattr(response, "output_text"):
-            # 정상 Responses API 응답
-            return response.output_text
-        elif isinstance(response, dict):
-            # makeup_response()
-            return response.get("output_text", "")
-        elif isinstance(response, str):
-            # WarningAgent
+        if isinstance(response, str):
             return response
+        if isinstance(response, dict):
+            if "choices" in response and response["choices"]:
+                return response["choices"][0]["message"].get("content") or ""
+            if "output_text" in response:
+                return response.get("output_text", "")
+        if hasattr(response, "choices") and response.choices:
+            return response.choices[0].message.content or ""
+        if hasattr(response, "output_text"):
+            return response.output_text
 
         return str(response)

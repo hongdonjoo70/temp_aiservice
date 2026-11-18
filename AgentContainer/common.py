@@ -14,51 +14,56 @@ load_dotenv()
 # 자동으로 초기화 속성으로 사용, 외부 수정 방지
 @dataclass(frozen=True)
 class Model:
-    basic: str = "gpt-4o-mini-2024-07-18"
-    advanced: str = "gpt-5-mini-2025-08-07"
+    basic: str = "gpt-oss-120b"    
+    advanced: str = "gpt-oss-120b"
+    temp: str = "k-exaone_v2.5"
+    gemini: str = "gpt-oss-120b"
+    gemini_flash: str = "gpt-oss-120b"
+    gemini_pro: str = "gpt-oss-120b"
+    gpt_oss_120b: str = "gpt-oss-120b"
 
 model = Model()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout = 30, max_retries = 1 )
+# Gemini OpenAI-compatible client
+client = OpenAI(
+    base_url="https://open.hasa.re.kr/v1",
+    api_key=os.getenv("HASA_API_KEY"),
+    timeout=30,
+    max_retries=1
+)
+
 
 # 한 번에 너무 많은 메시지가 API를 통해 전송되는 것을 막기 위해
 # token 양을 체크한 후 임계점을 넘어가면 예외처리
-# Responses API용 임의 응답 생성
-def makeup_response(message, status="ERROR"):
+# Chat Completions API용 임의 응답 생성
+def makeup_response(message, finish_reason="error"):
     """
-    Responses API의 Response 객체와 유사한
+    Chat Completions API의 Response 객체와 유사한
     dictionary 형태의 임의 응답을 생성한다.
-
-    정상적인 OpenAI Response 객체가 아니라
-    오류 발생 시 프로그램 흐름을 유지하기 위한 용도이다.
     """
     return {
         "id": "error-response",
-        "object": "response",
-        "status": status,
-        "output": [
+        "choices": [
             {
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "text": message
-                    }
-                ]
+                "finish_reason": finish_reason,
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": message
+                }
             }
         ],
         "output_text": message,
         "usage": {
-            "input_tokens": 0,
-            "output_tokens": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
             "total_tokens": 0
         }
     }
 
 
 # Responses API input 토큰 수 계산
-def gpt_num_tokens(messages, model="gpt-4o-mini"):
+def gpt_num_tokens(messages, model="gpt-oss-120b"):
     """
     Responses API에 전달할 input/context의
     문자열 기반 예상 토큰 수를 계산한다.

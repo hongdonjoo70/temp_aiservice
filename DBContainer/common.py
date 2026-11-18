@@ -12,14 +12,27 @@ from openai import OpenAI
 load_dotenv()
 
 # 자동으로 초기화 속성으로 사용, 외부 수정 방지
+
 @dataclass(frozen=True)
 class Model:
-    basic: str = "gpt-4o-mini-2024-07-18"
-    advanced: str = "gpt-5-mini-2025-08-07"
+    basic: str = "gpt-4o-mini-2024-07-18"    
+    advanced: str = "gpt-4o-2024-08-06"
+    temp: str = "k-exaone_v2.5"
+    gemini: str = "gpt-oss-120b"
+    gemini_flash: str = "gpt-oss-120b"
+    gemini_pro: str = "gpt-oss-120b"
+    gpt_oss_120b: str = "gpt-oss-120b"
 
 model = Model()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"), timeout = 30, max_retries = 1 )
+# Gemini OpenAI-compatible client
+client = OpenAI(
+    base_url="https://open.hasa.re.kr/v1",
+    api_key=os.getenv("HASA_API_KEY"),
+    timeout=30,
+    max_retries=1
+)
+
 
 # 한 번에 너무 많은 메시지가 API를 통해 전송되는 것을 막기 위해
 # token 양을 체크한 후 임계점을 넘어가면 예외처리
