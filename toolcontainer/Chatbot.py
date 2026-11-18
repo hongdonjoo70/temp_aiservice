@@ -5,7 +5,7 @@ class Chatbot:
     def __init__(self, system_role, instruction, use_model=model.gemini):
         # context 초기화 및 대화 문맥 생성
         self.model = use_model
-        self.max_token_size = 1024  # 모델별 최대 토큰 수 제한
+        self.max_token_size = 8192  # 모델별 최대 토큰 수 제한
         self.context = [
             {"role": "system", "content": f"{system_role}\n\n{instruction}"}  # 지시 추가
         ]
