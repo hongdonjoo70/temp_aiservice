@@ -2,7 +2,7 @@ from common import model, client, gpt_num_tokens, makeup_response
 import math
 
 class Chatbot:
-    def __init__(self, system_role, instruction, use_model=model.gemini):
+    def __init__(self, system_role, instruction, use_model=model.gpt_oss_120b):
         # context 초기화 및 대화 문맥 생성
         self.model = use_model
         self.max_token_size = 8192  # 모델별 최대 토큰 수 제한

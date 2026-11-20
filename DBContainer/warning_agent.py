@@ -80,18 +80,16 @@ class WarningAgent:
 
     def send_query(self, context, temperature=0, format_type="json_object"):
         try:
-            response = client.responses.create(
-                model=self.model,
-                input=context,
-                temperature=temperature,
-                text={
-                    "format": {
-                        "type": format_type
-                    }
-                }
-            )
+            request = {
+                "model": self.model,
+                "messages": context,
+                "temperature": temperature,
+            }
+            if format_type == "json_object":
+                request["response_format"] = {"type": "json_object"}
+            response = client.chat.completions.create(**request)
 
-            content = response.output_text
+            content = response.choices[0].message.content or ""
             print(f"query response:[{content}]")
             return content
 

@@ -25,7 +25,7 @@ class Model:
 
 model = Model()
 
-# Gemini OpenAI-compatible client
+# OpenAI-compatible Hasa client
 client = OpenAI(
     base_url="https://open.hasa.re.kr/v1",
     api_key=os.getenv("HASA_API_KEY"),
@@ -47,40 +47,47 @@ def makeup_response(message, status="ERROR"):
     """
     return {
         "id": "error-response",
-        "object": "response",
-        "status": status,
-        "output": [
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": [
-                    {
-                        "type": "output_text",
-                        "text": message
-                    }
-                ]
-            }
-        ],
-        "output_text": message,
+        "object": "chat.completion",
+        "choices": [{
+            "index": 0,
+            "finish_reason": status.lower(),
+            "message": {"role": "assistant", "content": message}
+        }],
         "usage": {
-            "input_tokens": 0,
-            "output_tokens": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
             "total_tokens": 0
         }
     }
 
 
+def to_chat_tools(tools):
+    """Convert Responses-style function definitions to Chat Completions format."""
+    converted = []
+    for tool in tools or []:
+        if tool.get("type") != "function" or "function" in tool:
+            converted.append(tool)
+            continue
+        converted.append({"type": "function", "function": {
+            key: value for key, value in tool.items() if key != "type"
+        }})
+    return converted
+
+
 # Responses API input 토큰 수 계산
-def gpt_num_tokens(messages, model="gpt-4o-mini"):
+def gpt_num_tokens(messages, model="gpt-oss-120b"):
     """
     Responses API에 전달할 input/context의
     문자열 기반 예상 토큰 수를 계산한다.
 
     messages에는 일반적인 message뿐 아니라
-    function_call, function_call_output 등의
+    tool_calls와 tool 결과 등의
     Responses API 항목도 들어올 수 있다.
     """
-    encoding = tiktoken.encoding_for_model(model)
+    try:
+        encoding = tiktoken.encoding_for_model(model)
+    except Exception:
+        encoding = tiktoken.get_encoding("cl100k_base")
     num_tokens = 0
 
     for item in messages:

@@ -43,7 +43,7 @@ def chat_api():
     analyzed = tool_calling.analyze(user_input, tools)
 
     # Responses API의 output에서 function_call 확인
-    function_calls = [item for item in analyzed.output if item.type == "function_call"]
+    function_calls = analyzed.get("choices", [{}])[0].get("message", {}).get("tool_calls", [])
 
     if function_calls:
         # 함수 호출이 필요한 경우

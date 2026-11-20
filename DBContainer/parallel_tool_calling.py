@@ -1,4 +1,4 @@
-from common import client, model, makeup_response 
+from common import client, model, makeup_response, to_chat_tools
 import json
 import requests
 from tavily import TavilyClient
@@ -131,12 +131,12 @@ class ToolCalling:
     # 1. 사용자 메시지 분석
     def analyze(self, user_message, tools):
         try:
-            response = client.responses.create(
+            response = client.chat.completions.create(
                     model=self.model,
-                    input=[{"role": "user", "content": user_message}],
-                    tools=tools,
+                    messages=[{"role": "user", "content": user_message}],
+                    tools=to_chat_tools(tools),
                     tool_choice="auto", 
-                )
+                ).model_dump()
             print(("response =>", response))
             return response
         except Exception as e:
@@ -146,22 +146,22 @@ class ToolCalling:
     def run(self, analyzed, context):
         try:
             # Responses API의 output에서 function_call 항목만 추출
-            function_calls = [ item for item in analyzed.output if item.type == "function_call" ]
+            message = analyzed.get("choices", [{}])[0].get("message", {})
+            function_calls = message.get("tool_calls", [])
 
             # 함수 호출이 없는 경우
             if not function_calls:
                 return analyzed
 
             # 모델이 요청한 모든 function_call을 context에 먼저 추가
-            for tool_call in function_calls:
-                context.append( tool_call.model_dump() )
+            context.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": function_calls})
 
             # 모든 함수 실행
             for tool_call in function_calls:
-                func_name = tool_call.name
+                func_name = tool_call["function"]["name"]
                 func_to_call = self.available_functions[ func_name ]
                 # JSON 문자열 → Python dictionary
-                func_args = json.loads( tool_call.arguments )
+                func_args = json.loads(tool_call["function"].get("arguments", "{}"))
                 print( f"function: {func_name}, " f"arguments: {func_args}" )
                 # 실제 Python 함수 호출
                 func_response = func_to_call( **func_args )
@@ -169,9 +169,9 @@ class ToolCalling:
                 # 함수 실행 결과를 context에 추가
                 context.append(
                     {
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "output": str(func_response)
+                        "role": "tool",
+                        "tool_call_id": tool_call.get("id", "call_0"),
+                        "content": str(func_response)
                     }
                 )
 
@@ -187,25 +187,20 @@ class ToolCalling:
                 if "role" in message and "content" in message
             ]
 
-            # function_call과 function_call_output은 role/content 형식이 아니므로
-            # 별도로 유지해야 합니다.
+            # assistant tool_calls와 tool 결과를 Chat Completions 형식으로 유지합니다.
             openai_context = [
-                message if message.get("type") in (
-                    "function_call", "function_call_output"
-                )
-                else {
-                    "role": message["role"],
-                    "content": message["content"]
-                }
+                {key: value for key, value in message.items()
+                 if key in ("role", "content", "tool_calls", "tool_call_id")}
                 for message in context
+                if "role" in message
             ]
 
             # 모든 함수 실행 결과를 포함하여 Responses API 다시 호출
-            final_response = client.responses.create(
+            final_response = client.chat.completions.create(
                 model=self.model,
-                input=openai_context,  # saved속성 제거한 context
-                tools=tools
-            )
+                messages=openai_context,
+                tools=to_chat_tools(tools)
+            ).model_dump()
             return final_response
         except Exception as e:
             print("Error occurred(run):",e)

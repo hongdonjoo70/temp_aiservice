@@ -71,13 +71,13 @@ class Chatbot:
                 self.context.pop()
                 return makeup_response('메시지를 조금 짧게 보내 줄래?')
 
-            response = client.responses.create(
+            response = client.chat.completions.create(
                 model=self.model,
-                input=self.to_openai_context(),  # saved 제외한 context 전달
+                messages=self.to_openai_context(),
                 temperature=0.5,
                 top_p=1,
-                max_output_tokens=256
-            )
+                max_tokens=256
+            ).model_dump()
             return response
 
         except Exception as e:
@@ -94,12 +94,12 @@ class Chatbot:
 
     # 응답 내용을 context에 추가
     def add_response(self, response):
-        if hasattr(response, "output_text"):
+        if isinstance(response, dict):
             # 정상적인 Responses API Response 객체
-            response_text = response.output_text
+            response_text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
         elif isinstance(response, dict):
             # makeup_response()의 임의 응답
-            response_text = response.get("output_text", "")
+            response_text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
         elif isinstance(response, str):
             # WarningAgent의 경고 메시지
             response_text = response
@@ -114,12 +114,12 @@ class Chatbot:
 
     # 응답 내용을 출력하고 반환
     def get_response(self, response):
-        if hasattr(response, "output_text"):
+        if isinstance(response, dict):
             # 정상 Responses API 응답
-            return response.output_text
+            return response.get("choices", [{}])[0].get("message", {}).get("content", "")
         elif isinstance(response, dict):
             # makeup_response()
-            return response.get("output_text", "")
+            return response.get("choices", [{}])[0].get("message", {}).get("content", "")
         elif isinstance(response, str):
             # WarningAgent
             return response
